@@ -1,0 +1,36 @@
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Layout from './components/Layout';
+import Convite from './pages/Convite';
+import Informacoes from './pages/Informacoes';
+import Confirmacao from './pages/Confirmacao';
+import Jogos from './pages/Jogos';
+import LinhaTempo from './pages/LinhaTempo';
+import Fotos from './pages/Fotos';
+import ChatLulu from './pages/ChatLulu';
+import Admin from './pages/Admin';
+
+function App() {
+  // Simula a função que você precisa criar em /utils
+  const createPageUrl = (pageName) => `/${pageName.toLowerCase()}`;
+
+  return (
+    <Router>
+      <Layout>
+        <Routes>
+          <Route path={createPageUrl("Convite")} element={<Convite />} />
+          <Route path={createPageUrl("Informacoes")} element={<Informacoes />} />
+          <Route path={createPageUrl("Confirmacao")} element={<Confirmacao />} />
+          <Route path={createPageUrl("Jogos")} element={<Jogos />} />
+          <Route path={createPageUrl("LinhaTempo")} element={<LinhaTempo />} />
+          <Route path={createPageUrl("Fotos")} element={<Fotos />} />
+          <Route path={createPageUrl("ChatLulu")} element={<ChatLulu />} />
+          <Route path={createPageUrl("Admin")} element={<Admin />} />
+          <Route path="/" element={<Convite />} />
+        </Routes>
+      </Layout>
+    </Router>
+  );
+}
+
+export default App;
