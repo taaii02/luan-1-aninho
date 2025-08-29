@@ -1,0 +1,389 @@
+
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { GameScore } from "@/entities/GameScore";
+import { ArrowLeft, Play, Pause, RotateCcw, Trophy } from "lucide-react";
+
+const frutas = ["🍎", "🍌", "🍓", "🍊", "🍍", "🥝", "🍇", "🍑"];
+
+export default function JogoPegarFrutas({ onVoltar }) {
+  const [jogando, setJogando] = useState(false);
+  const [pontuacao, setPontuacao] = useState(0);
+  const [frutasCaindo, setFrutasCaindo] = useState([]);
+  const [posicaoCesta, setPosicaoCesta] = useState(50);
+  const [gameOver, setGameOver] = useState(false);
+  const [nomeJogador, setNomeJogador] = useState("");
+  const [jogoIniciado, setJogoIniciado] = useState(false);
+  const [ranking, setRanking] = useState([]);
+  const [showRanking, setShowRanking] = useState(false);
+  const [tempoJogo, setTempoJogo] = useState(0);
+  const intervalRef = useRef(null);
+  const animationRef = useRef(null);
+  const timerRef = useRef(null);
+
+  const carregarRanking = useCallback(async () => {
+    const scores = await GameScore.filter({ game_type: "pegar-frutas" }, "-score");
+    setRanking(scores.slice(0, 10));
+  }, []);
+
+  useEffect(() => {
+    carregarRanking();
+  }, [carregarRanking]); // Corrected dependency array
+
+  const pararJogo = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+  }, []);
+
+  const iniciarJogo = useCallback(() => {
+    setFrutasCaindo([]);
+    setPontuacao(0);
+    setGameOver(false);
+    setTempoJogo(0);
+    
+    pararJogo();
+    
+    intervalRef.current = setInterval(() => {
+      const novaFruta = {
+        id: Date.now() + Math.random(),
+        fruta: frutas[Math.floor(Math.random() * frutas.length)],
+        x: Math.random() * 80 + 10,
+        y: -5
+      };
+      
+      setFrutasCaindo(prev => [...prev, novaFruta]);
+    }, 1200);
+
+    const animar = () => {
+      setFrutasCaindo(prev => 
+        prev.map(fruta => ({
+          ...fruta,
+          y: fruta.y + 2.5
+        })).filter(fruta => fruta.y < 100)
+      );
+      
+      animationRef.current = requestAnimationFrame(animar);
+    };
+    
+    animationRef.current = requestAnimationFrame(animar);
+  }, [pararJogo]);
+
+  useEffect(() => {
+    if (jogando) {
+      iniciarJogo();
+      timerRef.current = setInterval(() => {
+        setTempoJogo(prev => {
+          if (prev >= 60) {
+            setJogando(false);
+            setGameOver(true);
+            return 60;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } else {
+      pararJogo();
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      pararJogo();
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [jogando, iniciarJogo, pararJogo]);
+
+  const salvarPontuacao = async () => {
+    if (!nomeJogador.trim()) {
+      alert("Por favor, digite seu nome!");
+      return;
+    }
+
+    try {
+      await GameScore.create({
+        player_name: nomeJogador.trim(),
+        game_type: "pegar-frutas",
+        score: pontuacao,
+        details: `${pontuacao} frutas em ${tempoJogo}s`
+      });
+      
+      alert(`🎉 Pontuação salva! Você coletou ${pontuacao} frutas!`);
+      carregarRanking();
+      setJogoIniciado(false);
+      setNomeJogador("");
+      setGameOver(false);
+    } catch (error) {
+      alert("Erro ao salvar pontuação");
+    }
+  };
+
+  // Função unificada para mouse e touch
+  const moverCesta = (e) => {
+    if (!jogando) return;
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    let clientX;
+    
+    // Verifica se é touch ou mouse
+    if (e.touches && e.touches[0]) {
+      clientX = e.touches[0].clientX;
+    } else {
+      clientX = e.clientX;
+    }
+    
+    const x = ((clientX - rect.left) / rect.width) * 100;
+    setPosicaoCesta(Math.max(5, Math.min(95, x)));
+  };
+
+  const verificarColisoes = useCallback(() => {
+    setFrutasCaindo(prev => {
+      let novasPontuacao = pontuacao;
+      const frutasRestantes = prev.filter(fruta => {
+        const distanciaX = Math.abs(fruta.x - posicaoCesta);
+        const frutaNaCesta = fruta.y > 85 && fruta.y < 95 && distanciaX < 8;
+        
+        if (frutaNaCesta) {
+          novasPontuacao += 1;
+          return false;
+        }
+        
+        return true;
+      });
+      
+      if (novasPontuacao !== pontuacao) {
+        setPontuacao(novasPontuacao);
+      }
+      
+      return frutasRestantes;
+    });
+  }, [pontuacao, posicaoCesta]);
+
+  useEffect(() => {
+    if (jogando) {
+      verificarColisoes();
+    }
+  }, [frutasCaindo, jogando, verificarColisoes]);
+
+  if (showRanking) {
+    return (
+      <div className="min-h-screen p-4 md:p-8">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <Button onClick={() => setShowRanking(false)} variant="outline" className="flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4" />
+              Voltar ao Jogo
+            </Button>
+            <h1 className="text-2xl md:text-3xl font-bold text-green-600">🏆 Ranking</h1>
+            <div></div>
+          </div>
+          
+          <Card className="bg-white/95 backdrop-blur-md fruit-shadow">
+            <CardContent className="p-6">
+              {ranking.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">Nenhuma pontuação ainda! Seja o primeiro!</p>
+              ) : (
+                <div className="space-y-3">
+                  {ranking.map((score, index) => (
+                    <div key={score.id} className={`flex items-center gap-4 p-4 rounded-xl ${
+                      index === 0 ? 'bg-yellow-100 border-2 border-yellow-400' :
+                      index === 1 ? 'bg-gray-100 border-2 border-gray-400' :
+                      index === 2 ? 'bg-orange-100 border-2 border-orange-400' :
+                      'bg-white border border-gray-200'
+                    }`}>
+                      <div className="text-xl md:text-2xl">
+                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}º`}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold text-base md:text-lg">{score.player_name}</p>
+                        <p className="text-xs md:text-sm text-gray-600">{score.details}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl md:text-2xl font-bold text-green-600">{score.score}</p>
+                        <p className="text-xs text-gray-500">frutas</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (!jogoIniciado) {
+    return (
+      <div className="min-h-screen p-4 md:p-8">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <Button onClick={onVoltar} variant="outline" className="flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4" />
+              Voltar
+            </Button>
+            <h1 className="text-2xl md:text-3xl font-bold text-green-600">Pegar Frutas</h1>
+            <Button onClick={() => setShowRanking(true)} variant="outline" className="flex items-center gap-2">
+              <Trophy className="w-4 h-4" />
+              Ranking
+            </Button>
+          </div>
+          
+          <Card className="bg-white/95 backdrop-blur-md fruit-shadow">
+            <CardContent className="p-6 md:p-8 text-center">
+              <div className="text-4xl md:text-6xl mb-6">🧺</div>
+              <h2 className="text-xl md:text-2xl font-bold mb-4">Como Jogar</h2>
+              <p className="text-gray-600 mb-6">
+                Mova a cestinha e colete o máximo de frutas que conseguir em 60 segundos!
+                Use o mouse ou arraste com o dedo para controlar a cestinha.
+              </p>
+              
+              <div className="space-y-4 max-w-md mx-auto">
+                <div>
+                  <Label htmlFor="nome" className="text-base font-semibold">Seu Nome</Label>
+                  <Input
+                    id="nome"
+                    value={nomeJogador}
+                    onChange={(e) => setNomeJogador(e.target.value)}
+                    placeholder="Digite seu nome..."
+                    className="mt-1 text-center text-lg"
+                  />
+                </div>
+                
+                <Button 
+                  onClick={() => {
+                    setJogoIniciado(true);
+                    setJogando(true);
+                  }}
+                  disabled={!nomeJogador.trim()}
+                  className="w-full fruit-button text-lg py-3"
+                >
+                  🎮 Começar a Jogar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen p-2 md:p-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4 md:mb-8">
+          <Button onClick={() => {
+              setJogoIniciado(false);
+              setJogando(false);
+              setGameOver(false);
+              setPontuacao(0);
+              setTempoJogo(0);
+              setFrutasCaindo([]);
+              pararJogo();
+            }} variant="outline" className="flex items-center gap-2 text-sm md:text-base">
+            <ArrowLeft className="w-4 h-4" />
+            Sair
+          </Button>
+          
+          <div className="text-center flex-1 mx-2">
+            <h1 className="text-lg md:text-3xl font-bold text-green-600">Pegar Frutas</h1>
+            <div className="flex flex-col md:flex-row gap-2 md:gap-6 mt-2 text-xs md:text-base">
+              <p className="text-gray-600">Jogador: <span className="font-bold">{nomeJogador}</span></p>
+              <p className="text-gray-600">Frutas: <span className="font-bold text-green-600">{pontuacao}</span></p>
+              <p className="text-gray-600">Tempo: <span className="font-bold text-blue-600">{Math.max(0, 60 - tempoJogo)}s</span></p>
+            </div>
+          </div>
+          
+          <Button onClick={() => setJogando(!jogando)} className={`${jogando ? "bg-red-500 hover:bg-red-600" : "fruit-button"} text-sm md:text-base px-2 md:px-4`}>
+            {jogando ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            <span className="hidden md:inline ml-1">{jogando ? "Pausar" : "Iniciar"}</span>
+          </Button>
+        </div>
+
+        {/* Área do jogo */}
+        <Card className="bg-gradient-to-b from-sky-200 to-green-200 fruit-shadow">
+          <CardContent className="p-0">
+            <div 
+              className="relative h-64 md:h-96 overflow-hidden cursor-pointer touch-none"
+              onMouseMove={moverCesta}
+              onTouchMove={moverCesta}
+              onTouchStart={moverCesta}
+              onClick={moverCesta}
+            >
+              {/* Frutas caindo */}
+              <AnimatePresence>
+                {frutasCaindo.map((fruta) => (
+                  <motion.div
+                    key={fruta.id}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    exit={{ scale: 0 }}
+                    className="absolute text-2xl md:text-4xl pointer-events-none"
+                    style={{
+                      left: `${fruta.x}%`,
+                      top: `${fruta.y}%`,
+                      transform: 'translate(-50%, -50%)'
+                    }}
+                  >
+                    {fruta.fruta}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+
+              {/* Cesta */}
+              <motion.div
+                className="absolute bottom-4 text-4xl md:text-6xl pointer-events-none"
+                style={{
+                  left: `${posicaoCesta}%`,
+                  transform: 'translateX(-50%)'
+                }}
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 0.5, repeat: Infinity }}
+              >
+                🧺
+              </motion.div>
+
+              {/* Game Over */}
+              {gameOver && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                  <Card className="bg-white rounded-2xl p-4 md:p-6 text-center w-full max-w-md">
+                    <CardContent className="p-0">
+                      <div className="text-4xl md:text-6xl mb-4">🎯</div>
+                      <h3 className="text-xl md:text-2xl font-bold mb-4">Fim de Jogo!</h3>
+                      <p className="text-gray-600 mb-4 text-sm md:text-base">
+                        Você coletou <span className="font-bold text-green-600">{pontuacao} frutas</span>!
+                      </p>
+                      <div className="flex flex-col md:flex-row gap-3">
+                        <Button onClick={salvarPontuacao} className="fruit-button flex-1 text-sm md:text-base">
+                          <Trophy className="w-4 h-4 mr-2" />
+                          Salvar Pontuação
+                        </Button>
+                        <Button onClick={() => setShowRanking(true)} variant="outline" className="flex-1 text-sm md:text-base">
+                          Ver Ranking
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

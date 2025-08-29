@@ -1,0 +1,337 @@
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { GameScore } from "@/entities/GameScore";
+import { ArrowLeft, RotateCcw, Trophy } from "lucide-react";
+
+const frutas = ["🍎", "🍌", "🍓", "🍊", "🍍", "🥝", "🍇", "🍑"];
+
+export default function JogoMemoria({ onVoltar }) {
+  const [cartas, setCartas] = useState([]);
+  const [cartasViradas, setCartasViradas] = useState([]);
+  const [cartasEncontradas, setCartasEncontradas] = useState([]);
+  const [tentativas, setTentativas] = useState(0);
+  const [jogoCompleto, setJogoCompleto] = useState(false);
+  const [nomeJogador, setNomeJogador] = useState("");
+  const [jogoIniciado, setJogoIniciado] = useState(false);
+  const [ranking, setRanking] = useState([]);
+  const [showRanking, setShowRanking] = useState(false);
+
+  useEffect(() => {
+    carregarRanking();
+  }, []);
+
+  useEffect(() => {
+    if (cartasEncontradas.length === cartas.length && cartas.length > 0) {
+      setJogoCompleto(true);
+    }
+  }, [cartasEncontradas, cartas]);
+
+  const carregarRanking = async () => {
+    const scores = await GameScore.filter({ game_type: "memoria" }, "-score");
+    setRanking(scores.slice(0, 10));
+  };
+
+  const iniciarJogo = () => {
+    const cartasDoJogo = [...frutas, ...frutas]
+      .map((fruta, index) => ({
+        id: index,
+        fruta,
+        encontrada: false
+      }))
+      .sort(() => Math.random() - 0.5);
+    
+    setCartas(cartasDoJogo);
+    setCartasViradas([]);
+    setCartasEncontradas([]);
+    setTentativas(0);
+    setJogoCompleto(false);
+    setJogoIniciado(true);
+  };
+
+  const salvarPontuacao = async () => {
+    if (!nomeJogador.trim()) {
+      alert("Por favor, digite seu nome!");
+      return;
+    }
+
+    const pontuacao = Math.max(1000 - (tentativas * 50), 100);
+    
+    try {
+      await GameScore.create({
+        player_name: nomeJogador.trim(),
+        game_type: "memoria",
+        score: pontuacao,
+        details: `${tentativas} tentativas`
+      });
+      
+      alert(`🎉 Pontuação salva! Você fez ${pontuacao} pontos!`);
+      carregarRanking();
+      setJogoIniciado(false);
+      setNomeJogador("");
+    } catch (error) {
+      alert("Erro ao salvar pontuação");
+    }
+  };
+
+  const virarCarta = (id) => {
+    if (cartasViradas.length === 2 || cartasViradas.includes(id) || cartasEncontradas.includes(id)) {
+      return;
+    }
+
+    const novasCartasViradas = [...cartasViradas, id];
+    setCartasViradas(novasCartasViradas);
+
+    if (novasCartasViradas.length === 2) {
+      setTentativas(prev => prev + 1);
+      
+      const [carta1, carta2] = novasCartasViradas.map(cartaId => 
+        cartas.find(carta => carta.id === cartaId)
+      );
+
+      if (carta1.fruta === carta2.fruta) {
+        setTimeout(() => {
+          setCartasEncontradas(prev => [...prev, ...novasCartasViradas]);
+          setCartasViradas([]);
+        }, 1000);
+      } else {
+        setTimeout(() => {
+          setCartasViradas([]);
+        }, 1500);
+      }
+    }
+  };
+
+  if (showRanking) {
+    return (
+      <div className="min-h-screen p-4 md:p-8">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <Button onClick={() => setShowRanking(false)} variant="outline" className="flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4" />
+              Voltar ao Jogo
+            </Button>
+            <h1 className="text-2xl md:text-3xl font-bold text-purple-600">🏆 Ranking</h1>
+            <div></div>
+          </div>
+          
+          <Card className="bg-white/95 backdrop-blur-md fruit-shadow">
+            <CardContent className="p-6">
+              {ranking.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">Nenhuma pontuação ainda! Seja o primeiro!</p>
+              ) : (
+                <div className="space-y-3">
+                  {ranking.map((score, index) => (
+                    <div key={score.id} className={`flex items-center gap-4 p-4 rounded-xl ${
+                      index === 0 ? 'bg-yellow-100 border-2 border-yellow-400' :
+                      index === 1 ? 'bg-gray-100 border-2 border-gray-400' :
+                      index === 2 ? 'bg-orange-100 border-2 border-orange-400' :
+                      'bg-white border border-gray-200'
+                    }`}>
+                      <div className="text-xl md:text-2xl">
+                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}º`}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold text-base md:text-lg">{score.player_name}</p>
+                        <p className="text-xs md:text-sm text-gray-600">{score.details}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl md:text-2xl font-bold text-purple-600">{score.score}</p>
+                        <p className="text-xs text-gray-500">pontos</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (!jogoIniciado) {
+    return (
+      <div className="min-h-screen p-4 md:p-8">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <Button onClick={onVoltar} variant="outline" className="flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4" />
+              Voltar
+            </Button>
+            <h1 className="text-2xl md:text-3xl font-bold text-purple-600">Jogo da Memória</h1>
+            <Button onClick={() => setShowRanking(true)} variant="outline" className="flex items-center gap-2">
+              <Trophy className="w-4 h-4" />
+              Ranking
+            </Button>
+          </div>
+          
+          <Card className="bg-white/95 backdrop-blur-md fruit-shadow">
+            <CardContent className="p-6 md:p-8 text-center">
+              <div className="text-4xl md:text-6xl mb-6">🧠</div>
+              <h2 className="text-xl md:text-2xl font-bold mb-4">Como Jogar</h2>
+              <p className="text-gray-600 mb-6">
+                Encontre todos os pares de frutas virando as cartas. 
+                Quanto menos tentativas, maior sua pontuação!
+              </p>
+              
+              <div className="space-y-4 max-w-md mx-auto">
+                <div>
+                  <Label htmlFor="nome" className="text-base font-semibold">Seu Nome</Label>
+                  <Input
+                    id="nome"
+                    value={nomeJogador}
+                    onChange={(e) => setNomeJogador(e.target.value)}
+                    placeholder="Digite seu nome..."
+                    className="mt-1 text-center text-lg"
+                  />
+                </div>
+                
+                <Button 
+                  onClick={iniciarJogo}
+                  disabled={!nomeJogador.trim()}
+                  className="w-full fruit-button text-lg py-3"
+                >
+                  🎮 Começar a Jogar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen p-2 md:p-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4 md:mb-8">
+          <Button onClick={() => setJogoIniciado(false)} variant="outline" className="flex items-center gap-2 text-sm md:text-base">
+            <ArrowLeft className="w-4 h-4" />
+            Sair
+          </Button>
+          
+          <div className="text-center flex-1 mx-2">
+            <h1 className="text-lg md:text-3xl font-bold text-purple-600">Jogo da Memória</h1>
+            <p className="text-xs md:text-base text-gray-600">
+              Jogador: <span className="font-bold">{nomeJogador}</span> | 
+              Tentativas: <span className="font-bold text-purple-600">{tentativas}</span>
+            </p>
+          </div>
+          
+          <Button onClick={iniciarJogo} variant="outline" className="flex items-center gap-2 text-sm md:text-base px-2 md:px-4">
+            <RotateCcw className="w-4 h-4" />
+            <span className="hidden md:inline">Reiniciar</span>
+          </Button>
+        </div>
+
+        {/* Tabuleiro */}
+        <div className="grid grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-8">
+          {cartas.map((carta) => {
+            const estaVirada = cartasViradas.includes(carta.id);
+            const foiEncontrada = cartasEncontradas.includes(carta.id);
+            const mostrarFruta = estaVirada || foiEncontrada;
+
+            return (
+              <motion.div
+                key={carta.id}
+                whileHover={!mostrarFruta ? { scale: 1.05 } : {}}
+                whileTap={!mostrarFruta ? { scale: 0.95 } : {}}
+              >
+                <Card 
+                  className={`aspect-square cursor-pointer transition-all duration-300 ${
+                    foiEncontrada 
+                      ? 'bg-green-100 border-green-300' 
+                      : estaVirada 
+                      ? 'bg-yellow-100 border-yellow-300'
+                      : 'bg-white hover:bg-gray-50'
+                  }`}
+                  onClick={() => virarCarta(carta.id)}
+                >
+                  <CardContent className="flex items-center justify-center h-full p-0">
+                    <AnimatePresence mode="wait">
+                      {mostrarFruta ? (
+                        <motion.div
+                          key="fruta"
+                          initial={{ rotateY: 180, scale: 0 }}
+                          animate={{ rotateY: 0, scale: 1 }}
+                          exit={{ rotateY: 180, scale: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="text-2xl md:text-4xl lg:text-5xl"
+                        >
+                          {carta.fruta}
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key="verso"
+                          initial={{ rotateY: 0, scale: 1 }}
+                          exit={{ rotateY: 180, scale: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="text-2xl md:text-4xl lg:text-5xl"
+                        >
+                          ❓
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {/* Modal de vitória */}
+        <AnimatePresence>
+          {jogoCompleto && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.5, opacity: 0 }}
+                className="bg-white rounded-3xl p-6 md:p-8 text-center max-w-md mx-4 w-full"
+              >
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 1, repeat: Infinity }}
+                  className="text-4xl md:text-6xl mb-4"
+                >
+                  🎉
+                </motion.div>
+                <h2 className="text-2xl md:text-3xl font-bold text-green-600 mb-4">
+                  Parabéns, {nomeJogador}!
+                </h2>
+                <p className="text-base md:text-lg text-gray-600 mb-2">
+                  Você completou o jogo em
+                </p>
+                <p className="text-xl md:text-2xl font-bold text-purple-600 mb-6">
+                  {tentativas} tentativas!
+                </p>
+                <p className="text-base md:text-lg text-gray-600 mb-6">
+                  Sua pontuação: <span className="font-bold text-green-600">{Math.max(1000 - (tentativas * 50), 100)} pontos</span>
+                </p>
+                <div className="flex flex-col md:flex-row gap-3">
+                  <Button onClick={salvarPontuacao} className="fruit-button flex-1 text-sm md:text-base">
+                    <Trophy className="w-4 h-4 mr-2" />
+                    Salvar Pontuação
+                  </Button>
+                  <Button onClick={() => setShowRanking(true)} variant="outline" className="flex-1 text-sm md:text-base">
+                    Ver Ranking
+                  </Button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}

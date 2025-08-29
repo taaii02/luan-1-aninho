@@ -1,0 +1,427 @@
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowLeft, Download, RotateCcw, Palette, PaintBucket, Undo, ZoomIn, ZoomOut } from "lucide-react";
+
+// Paleta de cores expandida e organizada
+const coresPaleta = {
+  "Básicas": ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#000000", "#FFFFFF"],
+  "Frutas": ["#FF6B35", "#FFD93D", "#4ECDC4", "#FF6B9D", "#45B7D1", "#96CEB4", "#DDA0DD", "#F0E68C"],
+  "Pastéis": ["#FFB6C1", "#87CEEB", "#98FB98", "#F0E68C", "#DDA0DD", "#F5DEB3", "#FFE4E1", "#E0E0E0"],
+  "Vibrantes": ["#FF1493", "#00CED1", "#32CD32", "#FF4500", "#8A2BE2", "#FF6347", "#1E90FF", "#ADFF2F"],
+  "Terra": ["#8B4513", "#A0522D", "#D2B48C", "#F4A460", "#DEB887", "#CD853F", "#BC8F8F", "#696969"],
+  "Tons de Pele": ["#FDBCB4", "#EAA676", "#C68642", "#8D5524", "#BB9467", "#E8B5A2", "#F3C2A2", "#D4A574"],
+  "Extras 1": ["#FF69B4", "#20B2AA", "#9370DB", "#FF7F50", "#6495ED", "#DC143C", "#228B22", "#FFB347"],
+  "Extras 2": ["#FF8C00", "#4169E1", "#8FBC8F", "#DA70D6", "#FF1493", "#00FA9A", "#B22222", "#FFA500"],
+  "Tons Escuros": ["#2F4F4F", "#556B2F", "#8B4513", "#483D8B", "#2E8B57", "#B8860B", "#8B008B", "#191970"]
+};
+
+const desenhos = [
+  {
+    id: 1,
+    name: "Luan com frutas felizes",
+    url: "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/154e6e40e_Screenshot_20250822_231956_Google.jpg"
+  },
+  {
+    id: 2,
+    name: "Luan soprando a velinha", 
+    url: "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/18578f3be_Screenshot_20250822_231941_Google.jpg"
+  }
+];
+
+// Função para converter Hex para RGBA
+const hexToRgba = (hex) => {
+  let r = 0, g = 0, b = 0;
+  if (hex.length === 4) {
+    r = parseInt(hex[1] + hex[1], 16);
+    g = parseInt(hex[2] + hex[2], 16);
+    b = parseInt(hex[3] + hex[3], 16);
+  } else if (hex.length === 7) {
+    r = parseInt(hex[1] + hex[2], 16);
+    g = parseInt(hex[3] + hex[4], 16);
+    b = parseInt(hex[5] + hex[6], 16);
+  }
+  return [r, g, b, 255];
+};
+
+export default function JogoPintura({ onVoltar }) {
+  const [desenhoSelecionado, setDesenhoSelecionado] = useState(null);
+  const [corSelecionada, setCorSelecionada] = useState(coresPaleta.Frutas[0]);
+  const [categoriaSelecionada, setCategoriaSelecionada] = useState('Frutas');
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const canvasRef = useRef(null);
+  const containerRef = useRef(null);
+  const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
+
+  const saveToHistory = useCallback((imageData) => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(imageData);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  }, [history, historyIndex]);
+
+  const carregarDesenho = useCallback((desenho) => {
+    if (!canvasRef.current) return;
+    setLoading(true);
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+
+    img.onload = () => {
+      canvas.width = 800;
+      canvas.height = 800;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      const aspectRatio = img.width / img.height;
+      let drawWidth = canvas.width, drawHeight = canvas.height;
+      if (aspectRatio > 1) drawHeight = canvas.width / aspectRatio;
+      else drawWidth = canvas.height * aspectRatio;
+      
+      const x = (canvas.width - drawWidth) / 2;
+      const y = (canvas.height - drawHeight) / 2;
+      
+      ctx.drawImage(img, x, y, drawWidth, drawHeight);
+      
+      const initialImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      setHistory([initialImageData]);
+      setHistoryIndex(0);
+      setLoading(false);
+    };
+    img.onerror = () => setLoading(false);
+    img.src = desenho.url;
+  }, []);
+
+  useEffect(() => {
+    if (desenhoSelecionado) {
+      carregarDesenho(desenhoSelecionado);
+      setZoom(1);
+      setPanX(0);
+      setPanY(0);
+    }
+  }, [desenhoSelecionado, carregarDesenho]);
+
+  const floodFill = (startX, startY) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const { data, width, height } = imageData;
+    const fillColor = hexToRgba(corSelecionada);
+
+    const startPos = (startY * width + startX) * 4;
+    const targetColor = [data[startPos], data[startPos + 1], data[startPos + 2]];
+
+    if (targetColor[0] === fillColor[0] && targetColor[1] === fillColor[1] && targetColor[2] === fillColor[2]) {
+      return;
+    }
+
+    const pixelsToCheck = [[startX, startY]];
+    const visited = new Set();
+    
+    while (pixelsToCheck.length > 0) {
+      const [x, y] = pixelsToCheck.pop();
+      if (x < 0 || x >= width || y < 0 || y >= height) {
+        continue;
+      }
+
+      const key = `${x},${y}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+
+      const pixelPos = (y * width + x) * 4;
+      const r = data[pixelPos], g = data[pixelPos + 1], b = data[pixelPos + 2];
+
+      // Verificar se é uma borda forte (linha de contorno)
+      const isBoundary = (r < 80 && g < 80 && b < 80) || 
+                        (Math.abs(r - targetColor[0]) > 30 || 
+                         Math.abs(g - targetColor[1]) > 30 || 
+                         Math.abs(b - targetColor[2]) > 30);
+      
+      const isFillColor = r === fillColor[0] && g === fillColor[1] && b === fillColor[2];
+      
+      if (!isBoundary && !isFillColor) {
+        data[pixelPos] = fillColor[0];
+        data[pixelPos + 1] = fillColor[1];
+        data[pixelPos + 2] = fillColor[2];
+        data[pixelPos + 3] = 255;
+        
+        pixelsToCheck.push([x + 1, y]);
+        pixelsToCheck.push([x - 1, y]);
+        pixelsToCheck.push([x, y + 1]);
+        pixelsToCheck.push([x, y - 1]);
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+    saveToHistory(imageData);
+  };
+  
+  const getCanvasCoordinates = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    
+    let clientX, clientY;
+    if (e.touches && e.touches[0]) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    
+    const canvasX = ((clientX - rect.left - panX) / zoom / rect.width) * canvas.width;
+    const canvasY = ((clientY - rect.top - panY) / zoom / rect.height) * canvas.height;
+    
+    return {
+      x: Math.floor(Math.max(0, Math.min(canvas.width - 1, canvasX))),
+      y: Math.floor(Math.max(0, Math.min(canvas.height - 1, canvasY)))
+    };
+  };
+
+  const handleCanvasInteraction = (e) => {
+    e.preventDefault();
+    if (loading || isDragging) return;
+    
+    const { x, y } = getCanvasCoordinates(e);
+    floodFill(x, y);
+  };
+
+  const handlePanStart = (e) => {
+    if (e.touches && e.touches.length === 2) return; // Ignore pinch
+    
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    setLastPanPoint({ x: clientX, y: clientY });
+    setIsDragging(true);
+  };
+
+  const handlePanMove = (e) => {
+    if (!isDragging) return;
+    
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    const deltaX = clientX - lastPanPoint.x;
+    const deltaY = clientY - lastPanPoint.y;
+    
+    setPanX(prev => prev + deltaX);
+    setPanY(prev => prev + deltaY);
+    
+    setLastPanPoint({ x: clientX, y: clientY });
+  };
+
+  const handlePanEnd = () => {
+    setIsDragging(false);
+  };
+
+  const handleUndo = () => {
+    if (historyIndex <= 0) return;
+    const newIndex = historyIndex - 1;
+    const lastImageData = history[newIndex];
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    ctx.putImageData(lastImageData, 0, 0);
+    setHistoryIndex(newIndex);
+  };
+  
+  const baixarImagem = () => {
+    if (canvasRef.current) {
+      const canvas = canvasRef.current;
+      const link = document.createElement('a');
+      link.download = `luan-pintura-${Date.now()}.png`;
+      link.href = canvas.toDataURL();
+      link.click();
+    }
+  };
+
+  const resetView = () => {
+    setZoom(1);
+    setPanX(0);
+    setPanY(0);
+  };
+
+  if (!desenhoSelecionado) {
+    return (
+      <div className="min-h-screen p-4 md:p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <Button onClick={onVoltar} variant="outline" className="flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4" />
+              Voltar
+            </Button>
+            <div className="text-center">
+              <h1 className="text-2xl md:text-3xl font-bold text-yellow-600">Jogo de Pintura</h1>
+              <p className="text-gray-600">Escolha um desenho para colorir!</p>
+            </div>
+            <div></div>
+          </div>
+          <div className="grid md:grid-cols-2 gap-8">
+            {desenhos.map((desenho) => (
+              <motion.div key={desenho.id} initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: desenho.id * 0.2 }}>
+                <Card className="cursor-pointer hover:scale-105 transition-transform duration-300 fruit-shadow" onClick={() => setDesenhoSelecionado(desenho)}>
+                  <CardHeader>
+                    <CardTitle className="text-center text-lg">{desenho.name}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <img src={desenho.url} alt={desenho.name} className="w-full h-64 object-contain rounded-lg border-2 border-gray-200" />
+                    <Button className="w-full mt-4 fruit-button" onClick={(e) => { e.stopPropagation(); setDesenhoSelecionado(desenho); }}>
+                      <Palette className="w-4 h-4 mr-2" />
+                      Colorir este desenho
+                    </Button>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen p-2 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex flex-col md:flex-row items-center justify-between mb-4 md:mb-6 gap-4">
+          <Button onClick={() => setDesenhoSelecionado(null)} variant="outline" className="flex items-center gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            Escolher outro
+          </Button>
+          
+          <div className="text-center">
+            <h1 className="text-lg md:text-2xl font-bold text-yellow-600">{desenhoSelecionado.name}</h1>
+            <p className="text-sm md:text-base text-gray-600">Clique para preencher a área!</p>
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setZoom(Math.min(zoom + 0.2, 3))} variant="outline" className="flex items-center gap-2 text-sm">
+              <ZoomIn className="w-4 h-4" />
+              <span className="hidden md:inline">Zoom+</span>
+            </Button>
+            <Button onClick={() => setZoom(Math.max(zoom - 0.2, 0.5))} variant="outline" className="flex items-center gap-2 text-sm">
+              <ZoomOut className="w-4 h-4" />
+              <span className="hidden md:inline">Zoom-</span>
+            </Button>
+            <Button onClick={resetView} variant="outline" className="text-sm">
+              <span className="hidden md:inline">Reset View</span>
+              <span className="md:hidden">Reset</span>
+            </Button>
+            <Button onClick={handleUndo} variant="outline" className="flex items-center gap-2 text-sm" disabled={historyIndex <= 0}>
+              <Undo className="w-4 h-4" />
+              <span className="hidden md:inline">Desfazer</span>
+            </Button>
+            <Button onClick={() => carregarDesenho(desenhoSelecionado)} variant="outline" className="flex items-center gap-2 text-sm">
+              <RotateCcw className="w-4 h-4" />
+              <span className="hidden md:inline">Limpar</span>
+            </Button>
+            <Button onClick={baixarImagem} className="fruit-button flex items-center gap-2 text-sm">
+              <Download className="w-4 h-4" />
+              <span className="hidden md:inline">Baixar</span>
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-4 gap-4 md:gap-6">
+          <div className="lg:col-span-1 space-y-4">
+            <Card className="bg-white/95 backdrop-blur-md">
+              <CardHeader>
+                <CardTitle className="text-base md:text-lg flex items-center gap-2">
+                  <PaintBucket className="w-5 h-5 text-blue-600" />
+                  Balde de Tinta
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-1 mb-4">
+                  {Object.keys(coresPaleta).map(categoria => (
+                    <Button 
+                      key={categoria} 
+                      onClick={() => setCategoriaSelecionada(categoria)} 
+                      variant={categoriaSelecionada === categoria ? 'default' : 'outline'} 
+                      size="sm" 
+                      className="text-xs px-2 py-1"
+                    >
+                      {categoria}
+                    </Button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-4 gap-1 md:gap-2">
+                  {coresPaleta[categoriaSelecionada].map((cor) => (
+                    <button 
+                      key={cor} 
+                      onClick={() => setCorSelecionada(cor)} 
+                      className={`w-8 h-8 md:w-12 md:h-12 rounded-lg border-2 md:border-4 transition-all hover:scale-105 ${
+                        corSelecionada === cor ? 'border-gray-800 scale-110 shadow-lg' : 'border-gray-300'
+                      }`} 
+                      style={{ backgroundColor: cor }} 
+                      title={cor}
+                    />
+                  ))}
+                </div>
+                <div className="mt-4 text-center">
+                  <p className="text-xs md:text-sm font-medium mb-2">Cor Selecionada</p>
+                  <div className="mx-auto w-12 h-12 md:w-16 md:h-16 rounded-full border-2 md:border-4 border-gray-300 shadow-lg" style={{ backgroundColor: corSelecionada }}/>
+                  <p className="text-xs text-gray-500 mt-1">{corSelecionada}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="lg:col-span-3">
+            <Card className="bg-white/95 backdrop-blur-md">
+              <CardContent className="p-2 md:p-4">
+                <div 
+                  ref={containerRef}
+                  className="relative overflow-hidden border-2 border-gray-300 rounded-lg"
+                  style={{ height: '60vh' }}
+                >
+                  <canvas 
+                    ref={canvasRef} 
+                    className="absolute cursor-crosshair touch-none"
+                    style={{
+                      transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                      transformOrigin: 'top left'
+                    }}
+                    onClick={handleCanvasInteraction}
+                    onTouchStart={(e) => {
+                      if (e.touches.length === 1) {
+                        handleCanvasInteraction(e);
+                      }
+                      handlePanStart(e);
+                    }}
+                    onTouchMove={handlePanMove}
+                    onTouchEnd={handlePanEnd}
+                    onMouseDown={handlePanStart}
+                    onMouseMove={handlePanMove}
+                    onMouseUp={handlePanEnd}
+                    onMouseLeave={handlePanEnd}
+                  />
+                  {loading && (
+                    <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                      <div className="flex items-center gap-2 text-lg md:text-xl font-semibold text-orange-600">
+                        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>🍎</motion.div>
+                        Carregando desenho...
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 text-center">
+                  <p className="text-xs text-gray-500">
+                    Zoom: {(zoom * 100).toFixed(0)}% | Arraste para mover | Toque para pintar
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,136 @@
+import React, { useState } from "react";
+import { motion } from "framer-motion";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Gamepad2, Palette, Brain, Trophy } from "lucide-react";
+
+import JogoMemoria from "../components/jogos/JogoMemoria";
+import JogoPegarFrutas from "../components/jogos/JogoPegarFrutas";
+import JogoPintura from "../components/jogos/JogoPintura";
+
+const jogos = [
+  {
+    id: "memoria",
+    title: "Jogo da Memória",
+    description: "Encontre os pares de frutas!",
+    icon: Brain,
+    color: "from-purple-400 to-pink-400"
+  },
+  {
+    id: "pegar-frutas",
+    title: "Pegar Frutas",
+    description: "Colete as frutas na cestinha!",
+    icon: Trophy,
+    color: "from-green-400 to-blue-400"
+  },
+  {
+    id: "pintura",
+    title: "Pintura",
+    description: "Pinte os desenhos do Luan!",
+    icon: Palette,
+    color: "from-yellow-400 to-orange-400"
+  }
+];
+
+export default function Jogos() {
+  const [jogoAtivo, setJogoAtivo] = useState(null);
+
+  if (jogoAtivo) {
+    const JogoComponent = {
+      "memoria": JogoMemoria,
+      "pegar-frutas": JogoPegarFrutas,
+      "pintura": JogoPintura
+    }[jogoAtivo];
+
+    return (
+      <div className="min-h-screen">
+        <JogoComponent onVoltar={() => setJogoAtivo(null)} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen p-4 md:p-8">
+      <div className="max-w-4xl mx-auto">
+        <motion.div
+          initial={{ y: -50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.6 }}
+          className="text-center mb-8"
+        >
+          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent mb-4">
+            Jogos Divertidos
+          </h1>
+          <p className="text-lg text-gray-600">
+            Vamos brincar com o Luan! Escolha um jogo abaixo 🎮
+          </p>
+          <div className="flex justify-center gap-2 text-3xl mt-4">
+            🎯 🎮 🎨 🏆 🎪
+          </div>
+        </motion.div>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {jogos.map((jogo, index) => (
+            <motion.div
+              key={jogo.id}
+              initial={{ y: 50, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: index * 0.2, duration: 0.6 }}
+            >
+              <Card 
+                className="bg-white/95 backdrop-blur-md fruit-shadow hover:scale-105 transition-transform duration-300 cursor-pointer h-full"
+                onClick={() => setJogoAtivo(jogo.id)}
+              >
+                <CardHeader className="text-center">
+                  <div className={`w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-r ${jogo.color} flex items-center justify-center`}>
+                    <jogo.icon className="w-8 h-8 text-white" />
+                  </div>
+                  <CardTitle className="text-xl text-gray-800">
+                    {jogo.title}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-center pb-8">
+                  <p className="text-gray-600 mb-6">
+                    {jogo.description}
+                  </p>
+                  <Button 
+                    className="fruit-button w-full rounded-xl"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setJogoAtivo(jogo.id);
+                    }}
+                  >
+                    <Gamepad2 className="w-4 h-4 mr-2" />
+                    Jogar Agora
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Dica para os pais */}
+        <motion.div
+          initial={{ y: 50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.8, duration: 0.6 }}
+          className="mt-12"
+        >
+          <Card className="bg-gradient-to-r from-orange-100 to-yellow-100 border-2 border-orange-200">
+            <CardContent className="text-center p-8">
+              <h3 className="text-2xl font-bold text-orange-700 mb-4">
+                Dica para os Papais e Mamães! 👨‍👩‍👧‍👦
+              </h3>
+              <p className="text-lg text-orange-600 mb-4">
+                Estes jogos são perfeitos para estimular o desenvolvimento cognitivo das crianças de forma divertida!
+              </p>
+              <div className="flex justify-center gap-2 text-3xl">
+                🧠 ❤️ 🎈 🌟 ✨
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
